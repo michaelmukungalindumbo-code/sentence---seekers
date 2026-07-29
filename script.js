@@ -1,648 +1,415 @@
-/* ── LOCAL & PEER STATE ── */
-let state = {
-  playerName: localStorage.getItem('ss_name') || '',
-  score: 0,
-  level: 1,
-  mode: 'solo', // 'solo', 'vs', 'custom'
-  streak: 0,
-  hints: 3,
-  gridSize: 10,
-  grid: [],
-  wordsToFind: [],
-  foundWords: [],
-  customExtras: [],
-  timer: null,
-  timeLeft: 0,
-  maxTime: 0
+// ════════════════════════════════
+// STORAGE (localStorage — works on CodePen & browsers)
+// ════════════════════════════════
+async function sGet(k,sh=false){try{const v=localStorage.getItem(k);return v?JSON.parse(v):null;}catch{return null;}}
+async function sSet(k,v,sh=false){try{localStorage.setItem(k,JSON.stringify(v));}catch{}}
+async function sDel(k,sh=false){try{localStorage.removeItem(k);}catch{}}
+async function sList(p,sh=false){
+  try{
+    const keys=[];
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);
+      if(k&&k.startsWith(p))keys.push(k);
+    }
+    return keys;
+  }catch{return[];}
+}
+
+// ════════════════════════════════
+// CONSTANTS
+// ════════════════════════════════
+const COLORS=['#38BDF8','#F472B6','#34D399','#FBBF24','#A78BFA','#FB923C','#F87171','#67E8F9'];
+const DIRS=[[0,1],[0,-1],[1,0],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]];
+const DIAG_DIRS=[[1,1],[1,-1],[-1,1],[-1,-1]];
+const ABC='ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const DIFF={easy:{sz:8,n:4,mul:1},medium:{sz:9,n:5,mul:1.5},hard:{sz:10,n:6,mul:2}};
+const BONUS_EVERY=3, BONUS_SEC=90;
+const SCRAMBLE_EVERY=5;
+const BOSS_EVERY=10;
+
+// Determine level "type" by precedence — boss > scramble > bonus > normal
+function getLevelType(level){
+  if(level%BOSS_EVERY===0) return 'boss';
+  if(level%SCRAMBLE_EVERY===0) return 'scramble';
+  if(level%BONUS_EVERY===0) return 'bonus';
+  return 'normal';
+}
+const LEVEL_META={
+  normal:   {icon:'',    label:'',                 color:'#38BDF8'},
+  bonus:    {icon:'🔥',  label:'BONUS ROUND',       color:'#FBBF24'},
+  scramble: {icon:'🌀',  label:'SCRAMBLE LEVEL',    color:'#A78BFA'},
+  boss:     {icon:'👑',  label:'BOSS LEVEL',        color:'#FBBF24'}
 };
 
-let vsState = {
-  peer: null,
-  conn: null,
-  isHost: false,
-  roomCode: '',
-  oppName: 'Opponent',
-  oppScore: 0,
-  oppFound: 0
-};
+// ════════════════════════════════
+// PUZZLES
+// ════════════════════════════════
+const PUZZLES=[
+  {t:"Space Exploration",s:[
+    {tpl:"The brave _PILOT_ guided the ship into _ORBIT_.",b:["PILOT","ORBIT"]},
+    {tpl:"A glowing _COMET_ streaked past the _NEBULA_.",b:["COMET","NEBULA"]},
+    {tpl:"Scientists launched a _PROBE_ toward the _LUNAR_ surface.",b:["PROBE","LUNAR"]}
+  ],w:["PILOT","ORBIT","COMET","NEBULA","PROBE","LUNAR"]},
+  {t:"Ancient Civilizations",s:[
+    {tpl:"The great _PHARAOH_ ruled from a golden _THRONE_.",b:["PHARAOH","THRONE"]},
+    {tpl:"Workers carved the _SPHINX_ beside the tall _OBELISK_.",b:["SPHINX","OBELISK"]},
+    {tpl:"A clay _TABLET_ recorded the ancient _RITUAL_.",b:["TABLET","RITUAL"]}
+  ],w:["PHARAOH","THRONE","SPHINX","OBELISK","TABLET","RITUAL"]},
+  {t:"Deep Ocean",s:[
+    {tpl:"The _DIVER_ spotted a giant _SQUID_ in the dark.",b:["DIVER","SQUID"]},
+    {tpl:"A sunken _WRECK_ rested on a _CORAL_ reef.",b:["WRECK","CORAL"]},
+    {tpl:"The _SONAR_ detected a _TRENCH_ miles below.",b:["SONAR","TRENCH"]}
+  ],w:["DIVER","SQUID","WRECK","CORAL","SONAR","TRENCH"]},
+  {t:"Detective Mystery",s:[
+    {tpl:"The sharp _SLEUTH_ found a hidden _CLUE_ in the room.",b:["SLEUTH","CLUE"]},
+    {tpl:"She took a _SAMPLE_ and checked every _ALIBI_.",b:["SAMPLE","ALIBI"]},
+    {tpl:"The _MOTIVE_ pointed straight to the _CULPRIT_.",b:["MOTIVE","CULPRIT"]}
+  ],w:["SLEUTH","CLUE","SAMPLE","ALIBI","MOTIVE","CULPRIT"]},
+  {t:"Culinary Arts",s:[
+    {tpl:"The head _CHEF_ whisked the silky _BATTER_ all morning.",b:["CHEF","BATTER"]},
+    {tpl:"A pinch of _SPICE_ gave the rich _BROTH_ its depth.",b:["SPICE","BROTH"]},
+    {tpl:"The golden _GLAZE_ dripped over the warm _PASTRY_.",b:["GLAZE","PASTRY"]}
+  ],w:["CHEF","BATTER","SPICE","BROTH","GLAZE","PASTRY"]},
+  {t:"Wildlife Safari",s:[
+    {tpl:"A lone _CHEETAH_ chased prey across the _SAVANNA_.",b:["CHEETAH","SAVANNA"]},
+    {tpl:"The young _RHINO_ cooled off at the muddy _LAGOON_.",b:["RHINO","LAGOON"]},
+    {tpl:"Rangers tracked a rare _FALCON_ near the _CANYON_.",b:["FALCON","CANYON"]}
+  ],w:["CHEETAH","SAVANNA","RHINO","LAGOON","FALCON","CANYON"]},
+  {t:"Mountain Adventure",s:[
+    {tpl:"The _CLIMBER_ fixed a _PITON_ into the icy wall.",b:["CLIMBER","PITON"]},
+    {tpl:"A sudden _BLIZZARD_ buried the hidden _GLACIER_.",b:["BLIZZARD","GLACIER"]},
+    {tpl:"They set up _CAMP_ just below the rocky _SUMMIT_.",b:["CAMP","SUMMIT"]}
+  ],w:["CLIMBER","PITON","BLIZZARD","GLACIER","CAMP","SUMMIT"]},
+  {t:"Modern Technology",s:[
+    {tpl:"The new _SENSOR_ fed data to the central _SERVER_.",b:["SENSOR","SERVER"]},
+    {tpl:"An AI _NEURAL_ network decoded the _SIGNAL_ instantly.",b:["NEURAL","SIGNAL"]},
+    {tpl:"Engineers tested the _DRONE_ near the radio _TOWER_.",b:["DRONE","TOWER"]}
+  ],w:["SENSOR","SERVER","NEURAL","SIGNAL","DRONE","TOWER"]},
+  {t:"Musical Journey",s:[
+    {tpl:"The _VIOLIN_ solo echoed through the grand _CONCERT_ hall.",b:["VIOLIN","CONCERT"]},
+    {tpl:"She played a haunting _CHORD_ on her old _GUITAR_.",b:["CHORD","GUITAR"]},
+    {tpl:"The steady _TEMPO_ was set by a booming _DRUM_.",b:["TEMPO","DRUM"]}
+  ],w:["VIOLIN","CONCERT","CHORD","GUITAR","TEMPO","DRUM"]},
+  {t:"Fairy Tale Kingdom",s:[
+    {tpl:"The brave _KNIGHT_ crossed the enchanted _FOREST_.",b:["KNIGHT","FOREST"]},
+    {tpl:"A wise _WIZARD_ cast a spell on the crumbling _CASTLE_.",b:["WIZARD","CASTLE"]},
+    {tpl:"The hidden _POTION_ broke the ancient _CURSE_.",b:["POTION","CURSE"]}
+  ],w:["KNIGHT","FOREST","WIZARD","CASTLE","POTION","CURSE"]},
+  {t:"Science Lab",s:[
+    {tpl:"The _CHEMIST_ poured a glowing _REAGENT_ into the flask.",b:["CHEMIST","REAGENT"]},
+    {tpl:"Under the _LENS_, a tiny _MICROBE_ came into view.",b:["LENS","MICROBE"]},
+    {tpl:"The _LASER_ beam split the _PRISM_ into rainbow light.",b:["LASER","PRISM"]}
+  ],w:["CHEMIST","REAGENT","LENS","MICROBE","LASER","PRISM"]},
+  {t:"Urban Legends",s:[
+    {tpl:"Locals whispered about a _PHANTOM_ near the old _BRIDGE_.",b:["PHANTOM","BRIDGE"]},
+    {tpl:"The _CIPHER_ carved in stone held a dark _OMEN_.",b:["CIPHER","OMEN"]},
+    {tpl:"A grainy _PHOTO_ showed a strange _SHADOW_ in the alley.",b:["PHOTO","SHADOW"]}
+  ],w:["PHANTOM","BRIDGE","CIPHER","OMEN","PHOTO","SHADOW"]},
 
-const COLORS = ['#38BDF8', '#F472B6', '#34D399', '#A78BFA', '#FBBF24', '#FB923C'];
+  // ── NATURE & SCIENCE ──
+  {t:"Volcanoes & Geology",s:[
+    {tpl:"Hot _MAGMA_ surged through the _CRATER_ with great force.",b:["MAGMA","CRATER"]},
+    {tpl:"The _TREMOR_ shook the ground as _LAVA_ began to flow.",b:["TREMOR","LAVA"]},
+    {tpl:"Geologists studied the _BASALT_ rock near the _FISSURE_.",b:["BASALT","FISSURE"]}
+  ],w:["MAGMA","CRATER","TREMOR","LAVA","BASALT","FISSURE"]},
 
-/* ── EXPANDED PRESET LEVELS WITH MULTIPLE SENTENCES ── */
-const PRESET_LEVELS = [
-  {
-    level: 1,
-    type: 'normal',
-    sentences: [
-      "The quick brown [FOX] jumps over.",
-      "A loyal [DOG] barks loudly outside.",
-      "Bright green [TREES] grow near the lake.",
-      "Small blue [BIRDS] sing in the morning."
-    ],
-    extras: ["CAT", "SUN", "PARK"]
-  },
-  {
-    level: 2,
-    type: 'normal',
-    sentences: [
-      "Bright [STARS] shine in the night [SKY].",
-      "The full [MOON] reflects bright sunlight.",
-      "Soft white [CLOUDS] drift across the horizon.",
-      "A gentle [WIND] blows through the meadow."
-    ],
-    extras: ["DARK", "GLOW", "NIGHT"]
-  },
-  {
-    level: 3,
-    type: 'bonus',
-    time: 45,
-    sentences: [
-      "Fast [RIVER] flows into the deep [OCEAN].",
-      "Colorful fish swim in cool [WATER].",
-      "Heavy [RAIN] falls from dark storm clouds.",
-      "Sailors navigate a massive wooden [BOAT]."
-    ],
-    extras: ["WAVE", "FISH", "COAST", "SEAS"]
-  }
+  {t:"Rainforest",s:[
+    {tpl:"A bright _TOUCAN_ perched high in the forest _CANOPY_.",b:["TOUCAN","CANOPY"]},
+    {tpl:"The _JAGUAR_ stalked silently through the dense _JUNGLE_.",b:["JAGUAR","JUNGLE"]},
+    {tpl:"Heavy _RAINFALL_ fed the winding _RIVER_ below.",b:["RAINFALL","RIVER"]}
+  ],w:["TOUCAN","CANOPY","JAGUAR","JUNGLE","RAINFALL","RIVER"]},
+
+  {t:"Human Body",s:[
+    {tpl:"The _NEURON_ carried signals straight to the _BRAIN_.",b:["NEURON","BRAIN"]},
+    {tpl:"Strong _MUSCLE_ tissue surrounds every _TENDON_ in the leg.",b:["MUSCLE","TENDON"]},
+    {tpl:"The _PLASMA_ in our _BLOOD_ carries vital nutrients.",b:["PLASMA","BLOOD"]}
+  ],w:["NEURON","BRAIN","MUSCLE","TENDON","PLASMA","BLOOD"]},
+
+  {t:"Weather & Climate",s:[
+    {tpl:"A powerful _TYPHOON_ brought heavy _RAINFALL_ to the coast.",b:["TYPHOON","RAINFALL"]},
+    {tpl:"The _CLIMATE_ shift caused a record-breaking _DROUGHT_.",b:["CLIMATE","DROUGHT"]},
+    {tpl:"Dark _CUMULUS_ clouds signalled an incoming _BLIZZARD_.",b:["CUMULUS","BLIZZARD"]}
+  ],w:["TYPHOON","RAINFALL","CLIMATE","DROUGHT","CUMULUS","BLIZZARD"]},
+
+  // ── HISTORY & CULTURE ──
+  {t:"Medieval Knights",s:[
+    {tpl:"The _KNIGHT_ raised his _SHIELD_ before the charging army.",b:["KNIGHT","SHIELD"]},
+    {tpl:"Inside the stone _CASTLE_, the _SQUIRE_ polished every blade.",b:["CASTLE","SQUIRE"]},
+    {tpl:"A royal _HERALD_ announced the start of the grand _JOUST_.",b:["HERALD","JOUST"]}
+  ],w:["KNIGHT","SHIELD","CASTLE","SQUIRE","HERALD","JOUST"]},
+
+  {t:"Pirates",s:[
+    {tpl:"The cunning _PIRATE_ buried the _TREASURE_ on a hidden isle.",b:["PIRATE","TREASURE"]},
+    {tpl:"They sailed the _GALLEON_ under a black _JOLLY_ flag.",b:["GALLEON","JOLLY"]},
+    {tpl:"The ship's _COMPASS_ guided them past the deadly _REEF_.",b:["COMPASS","REEF"]}
+  ],w:["PIRATE","TREASURE","GALLEON","JOLLY","COMPASS","REEF"]},
+
+  {t:"Exploration & Discovery",s:[
+    {tpl:"The bold _EXPLORER_ drew a new _COMPASS_ route across the map.",b:["EXPLORER","COMPASS"]},
+    {tpl:"They crossed the _TUNDRA_ to reach the remote _GLACIER_.",b:["TUNDRA","GLACIER"]},
+    {tpl:"A worn _JOURNAL_ recorded every _SUMMIT_ they conquered.",b:["JOURNAL","SUMMIT"]}
+  ],w:["EXPLORER","COMPASS","TUNDRA","GLACIER","JOURNAL","SUMMIT"]},
+
+  {t:"Greek Mythology",s:[
+    {tpl:"Mighty _ZEUS_ hurled a _THUNDER_ bolt across the dark sky.",b:["ZEUS","THUNDER"]},
+    {tpl:"The cunning _HERMES_ carried messages for every _ORACLE_.",b:["HERMES","ORACLE"]},
+    {tpl:"Brave _THESEUS_ slew the fierce _MINOTAUR_ in the labyrinth.",b:["THESEUS","MINOTAUR"]}
+  ],w:["ZEUS","THUNDER","HERMES","ORACLE","THESEUS","MINOTAUR"]},
+
+  // ── FUN & POP ──
+  {t:"Movies & Cinema",s:[
+    {tpl:"The talented _DIRECTOR_ called action on the final _SCENE_.",b:["DIRECTOR","SCENE"]},
+    {tpl:"A dramatic _TRAILER_ teased the thrilling _CLIMAX_ ahead.",b:["TRAILER","CLIMAX"]},
+    {tpl:"The lead _ACTRESS_ won an _OSCAR_ for her stunning role.",b:["ACTRESS","OSCAR"]}
+  ],w:["DIRECTOR","SCENE","TRAILER","CLIMAX","ACTRESS","OSCAR"]},
+
+  {t:"Sports",s:[
+    {tpl:"The fearless _STRIKER_ scored a goal in extra _STOPPAGE_ time.",b:["STRIKER","STOPPAGE"]},
+    {tpl:"A swift _SPRINTER_ broke the world _RECORD_ on the track.",b:["SPRINTER","RECORD"]},
+    {tpl:"The team's _CAPTAIN_ led them to a stunning _TROPHY_ win.",b:["CAPTAIN","TROPHY"]}
+  ],w:["STRIKER","STOPPAGE","SPRINTER","RECORD","CAPTAIN","TROPHY"]},
+
+  {t:"Video Games",s:[
+    {tpl:"The skilled _PLAYER_ reached the final _DUNGEON_ at midnight.",b:["PLAYER","DUNGEON"]},
+    {tpl:"Collecting every _POWER_ up unlocked the hidden _PORTAL_.",b:["POWER","PORTAL"]},
+    {tpl:"The final _BATTLE_ against the _DRAGON_ lasted three hours.",b:["BATTLE","DRAGON"]}
+  ],w:["PLAYER","DUNGEON","POWER","PORTAL","BATTLE","DRAGON"]},
+
+  {t:"Superheroes",s:[
+    {tpl:"The caped _HERO_ stopped the _VILLAIN_ on the rooftop.",b:["HERO","VILLAIN"]},
+    {tpl:"Her incredible _POWER_ let her leap over every _SKYSCRAPER_.",b:["POWER","SKYSCRAPER"]},
+    {tpl:"The _SHIELD_ deflected the blast saving the whole _CITY_.",b:["SHIELD","CITY"]}
+  ],w:["HERO","VILLAIN","POWER","SKYSCRAPER","SHIELD","CITY"]},
+
+  // ── EDUCATION ──
+  {t:"Mathematics",s:[
+    {tpl:"The student solved the _ALGEBRA_ problem using a simple _FORMULA_.",b:["ALGEBRA","FORMULA"]},
+    {tpl:"A perfect _CIRCLE_ has an infinite number of lines of _SYMMETRY_.",b:["CIRCLE","SYMMETRY"]},
+    {tpl:"The teacher plotted each _VECTOR_ on the graph with great _PRECISION_.",b:["VECTOR","PRECISION"]}
+  ],w:["ALGEBRA","FORMULA","CIRCLE","SYMMETRY","VECTOR","PRECISION"]},
+
+  {t:"World Geography",s:[
+    {tpl:"The mighty _AMAZON_ river flows through a vast _RAINFOREST_.",b:["AMAZON","RAINFOREST"]},
+    {tpl:"Mount _EVEREST_ stands as the tallest _SUMMIT_ on Earth.",b:["EVEREST","SUMMIT"]},
+    {tpl:"The _SAHARA_ desert stretches across the African _CONTINENT_.",b:["SAHARA","CONTINENT"]}
+  ],w:["AMAZON","RAINFOREST","EVEREST","SUMMIT","SAHARA","CONTINENT"]},
+
+  {t:"Economics",s:[
+    {tpl:"Rising _INFLATION_ reduced the buying _POWER_ of consumers.",b:["INFLATION","POWER"]},
+    {tpl:"The _MARKET_ crash led to a sharp drop in _EXPORTS_.",b:["MARKET","EXPORTS"]},
+    {tpl:"Central banks adjust the _INTEREST_ rate to control _GROWTH_.",b:["INTEREST","GROWTH"]}
+  ],w:["INFLATION","POWER","MARKET","EXPORTS","INTEREST","GROWTH"]},
+
+  {t:"Elements & Chemistry",s:[
+    {tpl:"_OXYGEN_ and _HYDROGEN_ combine to form pure water.",b:["OXYGEN","HYDROGEN"]},
+    {tpl:"The _PROTON_ sits at the core of every _NUCLEUS_ in an atom.",b:["PROTON","NUCLEUS"]},
+    {tpl:"A _CATALYST_ speeds up the _REACTION_ without being consumed.",b:["CATALYST","REACTION"]}
+  ],w:["OXYGEN","HYDROGEN","PROTON","NUCLEUS","CATALYST","REACTION"]}
 ];
 
-window.addEventListener('DOMContentLoaded', () => {
-  initBackgroundCanvas();
-  loadLeaderboard();
-  
-  if (state.playerName) {
-    document.getElementById('name-inp').value = state.playerName;
-  }
-  
-  document.getElementById('name-go').addEventListener('click', () => {
-    const val = document.getElementById('name-inp').value.trim();
-    if (val) {
-      state.playerName = val;
-      localStorage.setItem('ss_name', val);
-      if (state.pendingMode === 'vs') initVSLobby();
-      else startSoloGame();
-    }
-  });
+// ════════════════════════════════
+// STATE
+// ════════════════════════════════
+const G={
+  mode:'solo', name:'', level:1, diff:'easy', score:0, streak:0, hints:3,
+  themeIdx:0, levelType:'normal', bonLeft:BONUS_SEC, bonSecTotal:BONUS_SEC, bonIv:null,
+  grid:[], words:[], sentences:[], found:new Set(),
+  dragging:false, startCell:null, curCell:null, dragLine:null,
+  roomCode:null, isHost:false, oppName:'', oppScore:0, oppFound:0, pollIv:null,
+  customPuzzle:null, extraWords:[]
+};
 
-  setupGridDragging();
-});
-
-function show(screenId) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  document.getElementById('s-' + screenId).classList.add('active');
+// ════════════════════════════════
+// SCREEN NAV
+// ════════════════════════════════
+function show(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  const el=document.getElementById('s-'+id);
+  if(el){el.classList.add('active');el.scrollTop=0;window.scrollTo(0,0);}
 }
 
-function goSolo() {
-  if (!state.playerName) {
-    state.pendingMode = 'solo';
-    show('name');
-  } else {
-    startSoloGame();
-  }
-}
-
-function goVS() {
-  if (!state.playerName) {
-    state.pendingMode = 'vs';
-    show('name');
-  } else {
-    initVSLobby();
-  }
-}
-
-function goJoinChallenge() { show('join'); }
-function goCreate() { show('create'); }
-
-function startSoloGame() {
-  state.mode = 'solo';
-  state.score = 0;
-  state.level = 1;
-  state.hints = 3;
-  loadLevel(state.level);
-  show('game');
-}
-
-function loadLevel(lvlNum) {
-  const lvlData = PRESET_LEVELS[(lvlNum - 1) % PRESET_LEVELS.length];
-  state.streak = 0;
-  state.foundWords = [];
-  updateStreakUI();
-  
-  parseAndBuildLevel(lvlData);
-  
-  document.getElementById('vs-bar').classList.remove('on');
-  document.getElementById('type-banner').classList.remove('on');
-  
-  if (lvlData.type === 'bonus') {
-    setupTimerBanner('⚡ Bonus Round!', 'Find all missing words before time runs out!', lvlData.time, '#FBBF24');
-  }
-
-  document.getElementById('level-tag').innerHTML = `Level ${lvlNum} · <span style="color:var(--sky)">${lvlData.type.toUpperCase()}</span>`;
-  document.getElementById('score-disp').textContent = `${state.score} PTS`;
-  document.getElementById('hint-cnt').textContent = state.hints;
-}
-
-function parseAndBuildLevel(data) {
-  const container = document.getElementById('sentence-container');
-  container.innerHTML = '';
-  const words = [];
-  
-  data.sentences.forEach(sText => {
-    const card = document.createElement('div');
-    card.className = 's-card';
-    const html = sText.replace(/\[(.*?)\]/g, (match, word) => {
-      const clean = word.toUpperCase();
-      words.push(clean);
-      return `<span class="blank" data-word="${clean}">___</span>`;
-    });
-    card.innerHTML = html;
-    container.appendChild(card);
-  });
-
-  if (data.extras) words.push(...data.extras.map(e => e.toUpperCase()));
-  state.wordsToFind = [...new Set(words)];
-  generateGrid(state.wordsToFind);
-}
-
-function generateGrid(words) {
-  const maxLen = Math.max(...words.map(w => w.length));
-  // Dynamic sizing to fit all sentences and words cleanly
-  const size = Math.max(10, maxLen + 2);
-  state.gridSize = size;
-  let grid = Array(size).fill(null).map(() => Array(size).fill(''));
-  
-  const directions = [[0, 1], [1, 0], [1, 1], [-1, 1]];
-
-  words.forEach(word => {
-    let placed = false;
-    let attempts = 0;
-    while (!placed && attempts < 200) {
-      attempts++;
-      const dir = directions[Math.floor(Math.random() * directions.length)];
-      const row = Math.floor(Math.random() * size);
-      const col = Math.floor(Math.random() * size);
-
-      if (canPlaceWord(grid, word, row, col, dir, size)) {
-        for (let i = 0; i < word.length; i++) {
-          grid[row + dir[0] * i][col + dir[1] * i] = word[i];
-        }
-        placed = true;
-      }
-    }
-  });
-
-  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  for (let r = 0; r < size; r++) {
-    for (let c = 0; c < size; c++) {
-      if (!grid[r][c]) grid[r][c] = letters[Math.floor(Math.random() * letters.length)];
-    }
-  }
-
-  state.grid = grid;
-  renderGridUI();
-}
-
-function canPlaceWord(grid, word, r, c, dir, size) {
-  for (let i = 0; i < word.length; i++) {
-    const nr = r + dir[0] * i;
-    const nc = c + dir[1] * i;
-    if (nr < 0 || nr >= size || nc < 0 || nc >= size) return false;
-    if (grid[nr][nc] !== '' && grid[nr][nc] !== word[i]) return false;
-  }
-  return true;
-}
-
-function renderGridUI() {
-  const gridEl = document.getElementById('grid');
-  gridEl.style.gridTemplateColumns = `repeat(${state.gridSize}, 1fr)`;
-  gridEl.innerHTML = '';
-  document.getElementById('svg-found-group').innerHTML = '';
-
-  for (let r = 0; r < state.gridSize; r++) {
-    for (let c = 0; c < state.gridSize; c++) {
-      const cell = document.createElement('div');
-      cell.className = 'cell';
-      cell.dataset.r = r;
-      cell.dataset.c = c;
-      cell.textContent = state.grid[r][c];
-      gridEl.appendChild(cell);
-    }
-  }
-}
-
-/* ── TOUCH & MOUSE GRID DRAGGING ── */
-let dragStart = null;
-let currentSelection = [];
-
-function setupGridDragging() {
-  const box = document.getElementById('grid-box');
-
-  const getCellCoords = (e) => {
-    const touch = e.touches ? e.touches[0] : e;
-    const el = document.elementFromPoint(touch.clientX, touch.clientY);
-    if (el && el.classList.contains('cell')) {
-      return { r: parseInt(el.dataset.r), c: parseInt(el.dataset.c) };
-    }
-    return null;
-  };
-
-  const startDrag = (e) => {
-    const coords = getCellCoords(e);
-    if (coords) {
-      dragStart = coords;
-      updateDrag(coords);
-    }
-  };
-
-  const moveDrag = (e) => {
-    if (!dragStart) return;
-    const coords = getCellCoords(e);
-    if (coords) updateDrag(coords);
-  };
-
-  const endDrag = () => {
-    if (!dragStart) return;
-    checkSelectedWord();
-    dragStart = null;
-    currentSelection = [];
-    document.getElementById('svg-drag').style.display = 'none';
-    document.querySelectorAll('.cell.active').forEach(c => c.classList.remove('active'));
-  };
-
-  box.addEventListener('mousedown', startDrag);
-  window.addEventListener('mousemove', moveDrag);
-  window.addEventListener('mouseup', endDrag);
-
-  box.addEventListener('touchstart', (e) => { startDrag(e); e.preventDefault(); }, { passive: false });
-  window.addEventListener('touchmove', moveDrag, { passive: false });
-  window.addEventListener('touchend', endDrag);
-}
-
-function updateDrag(endCoords) {
-  const dr = endCoords.r - dragStart.r;
-  const dc = endCoords.c - dragStart.c;
-  
-  if (dr !== 0 && dc !== 0 && Math.abs(dr) !== Math.abs(dc)) return;
-
-  const steps = Math.max(Math.abs(dr), Math.abs(dc));
-  const stepR = dr === 0 ? 0 : dr / steps;
-  const stepC = dc === 0 ? 0 : dc / steps;
-
-  currentSelection = [];
-  document.querySelectorAll('.cell.active').forEach(c => c.classList.remove('active'));
-
-  for (let i = 0; i <= steps; i++) {
-    const r = dragStart.r + stepR * i;
-    const c = dragStart.c + stepC * i;
-    currentSelection.push({ r, c });
-    
-    const cellEl = document.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
-    if (cellEl) cellEl.classList.add('active');
-  }
-
-  if (currentSelection.length > 0) {
-    const startCell = document.querySelector(`.cell[data-r="${dragStart.r}"][data-c="${dragStart.c}"]`);
-    const endCell = document.querySelector(`.cell[data-r="${endCoords.r}"][data-c="${endCoords.c}"]`);
-    drawSVGLine('svg-drag', startCell, endCell);
-  }
-}
-
-function checkSelectedWord() {
-  if (currentSelection.length === 0) return;
-
-  const word = currentSelection.map(pos => state.grid[pos.r][pos.c]).join('');
-  const reverseWord = word.split('').reverse().join('');
-
-  let matched = null;
-  if (state.wordsToFind.includes(word)) matched = word;
-  else if (state.wordsToFind.includes(reverseWord)) matched = reverseWord;
-
-  if (matched && !state.foundWords.includes(matched)) {
-    handleWordFound(matched, currentSelection);
-  }
-}
-
-function handleWordFound(word, posArray) {
-  state.foundWords.push(word);
-  
-  state.streak++;
-  const mult = Math.min(state.streak, 3);
-  const pts = word.length * 100 * mult;
-  state.score += pts;
-  
-  document.getElementById('score-disp').textContent = `${state.score} PTS`;
-  updateStreakUI();
-
-  document.querySelectorAll(`.blank[data-word="${word}"]`).forEach(b => {
-    b.textContent = word;
-    b.classList.add('done');
-  });
-
-  const firstCell = document.querySelector(`.cell[data-r="${posArray[0].r}"][data-c="${posArray[0].c}"]`);
-  const lastCell = document.querySelector(`.cell[data-r="${posArray[posArray.length-1].r}"][data-c="${posArray[posArray.length-1].c}"]`);
-  
-  const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-  line.setAttribute('class', 'l-found');
-  const color = COLORS[(state.foundWords.length - 1) % COLORS.length];
-  line.setAttribute('stroke', color);
-  
-  setLineCoordinates(line, firstCell, lastCell);
-  document.getElementById('svg-found-group').appendChild(line);
-
-  if (state.mode === 'vs' && vsState.conn) {
-    vsState.conn.send({
-      type: 'WORD_FOUND',
-      word: word,
-      score: state.score,
-      foundCount: state.foundWords.length
-    });
-  }
-
-  if (state.foundWords.length >= state.wordsToFind.length) {
-    setTimeout(levelComplete, 600);
-  }
-}
-
-function drawSVGLine(lineId, cell1, cell2) {
-  const line = document.getElementById(lineId);
-  line.style.display = 'block';
-  setLineCoordinates(line, cell1, cell2);
-}
-
-function setLineCoordinates(line, cell1, cell2) {
-  const gridBox = document.getElementById('grid-box').getBoundingClientRect();
-  const r1 = cell1.getBoundingClientRect();
-  const r2 = cell2.getBoundingClientRect();
-
-  const x1 = (r1.left + r1.width / 2) - gridBox.left;
-  const y1 = (r1.top + r1.height / 2) - gridBox.top;
-  const x2 = (r2.left + r2.width / 2) - gridBox.left;
-  const y2 = (r2.top + r2.height / 2) - gridBox.top;
-
-  line.setAttribute('x1', x1);
-  line.setAttribute('y1', y1);
-  line.setAttribute('x2', x2);
-  line.setAttribute('y2', y2);
-}
-
-function setupTimerBanner(title, subtitle, seconds, color) {
-  const banner = document.getElementById('type-banner');
-  banner.classList.add('on');
-  document.getElementById('type-lbl').textContent = title;
-  document.getElementById('type-sub').textContent = subtitle;
-  document.getElementById('type-lbl').style.color = color;
-  
-  state.timeLeft = seconds;
-  state.maxTime = seconds;
-  
-  if (state.timer) clearInterval(state.timer);
-  state.timer = setInterval(() => {
-    state.timeLeft--;
-    document.getElementById('type-time').textContent = state.timeLeft;
-    const pct = (state.timeLeft / state.maxTime) * 100;
-    document.getElementById('type-fill').style.width = pct + '%';
-
-    if (state.timeLeft <= 0) {
-      clearInterval(state.timer);
-      levelComplete();
-    }
-  }, 1000);
-}
-
-function levelComplete() {
-  if (state.timer) clearInterval(state.timer);
-  const ov = document.getElementById('ov');
-  ov.classList.remove('hide');
-  
-  ov.innerHTML = `
-    <div class="ov-title">LEVEL COMPLETE!</div>
-    <div class="ov-score">+${state.score} PTS</div>
-    <button class="btn btn-sky" onclick="closeOverlay(); nextLevel();">Next Level →</button>
-  `;
-  saveScoreToLeaderboard(state.playerName, state.score);
-}
-
-function nextLevel() {
-  state.level++;
-  loadLevel(state.level);
-}
-
-function closeOverlay() {
-  document.getElementById('ov').classList.add('hide');
-}
-
-function confirmExit() {
-  if (confirm("Quit current game?")) {
-    if (state.timer) clearInterval(state.timer);
-    show('home');
-  }
-}
-
-function updateStreakUI() {
-  const dots = document.querySelectorAll('.sdot');
-  dots.forEach((d, idx) => {
-    if (idx < state.streak) d.classList.add('on');
-    else d.classList.remove('on');
-  });
-  document.getElementById('streak-mult').textContent = `${Math.min(state.streak + 1, 3)}x`;
-}
-
-function useHint() {
-  if (state.hints <= 0) return;
-  const unfound = state.wordsToFind.filter(w => !state.foundWords.includes(w));
-  if (unfound.length === 0) return;
-
-  const target = unfound[0];
-  state.hints--;
-  document.getElementById('hint-cnt').textContent = state.hints;
-
-  // Highlights only the primary starting cell of the unfound word
-  for (let r = 0; r < state.gridSize; r++) {
-    for (let c = 0; c < state.gridSize; c++) {
-      if (state.grid[r][c] === target[0]) {
-        const cell = document.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
-        if (cell) {
-          cell.style.background = 'rgba(167, 139, 250, 0.4)';
-          setTimeout(() => cell.style.background = '', 1200);
-          return;
-        }
-      }
-    }
-  }
-}
-
-function addExtraWord() {
-  const inp = document.getElementById('c-extra-inp');
-  const val = inp.value.trim().toUpperCase();
-  if (val && !state.customExtras.includes(val)) {
-    state.customExtras.push(val);
-    renderChips();
-    inp.value = '';
-  }
-}
-
-function renderChips() {
-  const container = document.getElementById('c-chips');
-  container.innerHTML = '';
-  state.customExtras.forEach(w => {
-    const chip = document.createElement('div');
-    chip.className = 'chip chip-rose';
-    chip.innerHTML = `${w}`;
-    container.appendChild(chip);
-  });
-}
-
-function saveCustomPuzzle() {
-  const text = document.getElementById('c-text').value.trim();
-  if (!text) return alert("Please enter sentences.");
-
-  const payload = {
-    sentences: text.split('\n').filter(s => s.trim().length > 0),
-    extras: state.customExtras
-  };
-
-  const code = btoa(JSON.stringify(payload));
-  const ov = document.getElementById('ov');
-  ov.classList.remove('hide');
-  ov.innerHTML = `
-    <div class="ov-title">PUZZLE CREATED!</div>
-    <p style="text-align:center; max-width:300px; word-break:break-all;">${code}</p>
-    <button class="btn btn-rose" onclick="navigator.clipboard.writeText('${code}'); alert('Code copied!');">Copy Code 📋</button>
-    <button class="btn btn-ghost" onclick="closeOverlay(); show('home');">Back</button>
-  `;
-}
-
-function loadCustomChallenge() {
-  const code = document.getElementById('custom-code-inp').value.trim();
-  if (!code) return;
-
-  try {
-    const decoded = JSON.parse(atob(code));
-    state.mode = 'custom';
-    state.score = 0;
-    parseAndBuildLevel(decoded);
-    show('game');
-  } catch (e) {
-    document.getElementById('custom-status').textContent = 'Invalid Challenge Code!';
-  }
-}
-
-function saveScoreToLeaderboard(name, score) {
-  let lb = JSON.parse(localStorage.getItem('ss_lb') || '[]');
-  lb.push({ name, score });
-  lb.sort((a, b) => b.score - a.score);
-  lb = lb.slice(0, 5);
-  localStorage.setItem('ss_lb', JSON.stringify(lb));
-  loadLeaderboard();
-}
-
-function loadLeaderboard() {
-  const lb = JSON.parse(localStorage.getItem('ss_lb') || '[]');
-  const list = document.getElementById('lb-list');
-  if (lb.length === 0) {
-    list.innerHTML = `<div class="lb-empty">No high scores yet!</div>`;
-    return;
-  }
-  list.innerHTML = lb.map((item, idx) => `
+// ════════════════════════════════
+// LEADERBOARD
+// ════════════════════════════════
+async function loadLB(){
+  const keys=await sList('lb:',true);
+  const rows=[];
+  for(const k of keys){const v=await sGet(k,true);if(v)rows.push(v);}
+  rows.sort((a,b)=>b.score-a.score);
+  const el=document.getElementById('lb-list');
+  if(!rows.length){el.innerHTML='<div class="lb-empty">No scores yet — be the first!</div>';return;}
+  el.innerHTML=rows.slice(0,5).map((r,i)=>`
     <div class="lb-row">
-      <div class="lb-rank">#${idx + 1}</div>
-      <div class="lb-name">${item.name}</div>
-      <div class="lb-score">${item.score} PTS</div>
+      <div class="lb-rank">${['🥇','🥈','🥉','4.','5.'][i]}</div>
+      <div class="lb-name">${r.name}</div>
+      <div class="lb-score">${r.score.toLocaleString()}</div>
+    </div>`).join('');
+}
+async function saveLB(name,score){
+  const k='lb:'+name.toLowerCase().replace(/\s+/g,'-');
+  const ex=await sGet(k,true);
+  if(!ex||score>ex.score) await sSet(k,{name,score},true);
+}
+
+// ════════════════════════════════
+// NAME GATE
+// ════════════════════════════════
+let _pendingAction=null;
+function requireName(fn){
+  if(G.name){fn();return;}
+  _pendingAction=fn;
+  show('name');
+  const inp=document.getElementById('name-inp');
+  inp.value='';
+  setTimeout(()=>inp.focus(),300);
+  const btn=document.getElementById('name-go');
+  btn.onclick=()=>{
+    const n=inp.value.trim();
+    if(!n){inp.style.borderColor='var(--red)';return;}
+    G.name=n;
+    if(_pendingAction){_pendingAction();_pendingAction=null;}
+  };
+  inp.onkeydown=e=>{if(e.key==='Enter')btn.click();};
+}
+
+// ════════════════════════════════
+// SOLO
+// ════════════════════════════════
+function goSolo(){
+  requireName(()=>{
+    G.mode='solo';G.level=1;G.score=0;G.themeIdx=0;
+    document.getElementById('diff-bar').style.display='flex';
+    document.getElementById('vs-bar').classList.remove('on');
+    show('game');
+    build();
+  });
+}
+
+// ════════════════════════════════
+// VS MODE
+// ════════════════════════════════
+function goVS(){requireName(()=>{G.mode='vs';show('vs');renderVSChoose();});}
+
+function renderVSChoose(){
+  document.getElementById('vs-body').innerHTML=`
+    <div style="display:flex;flex-direction:column;gap:10px;width:100%;">
+      <button class="btn btn-sky" onclick="createRoom()">Create Room</button>
+      <div style="text-align:center;color:var(--muted);font-size:12px;">— or join one —</div>
+      <div class="join-row">
+        <input class="code-input" id="vs-join-inp" placeholder="XXXXX" maxlength="5" autocomplete="off" spellcheck="false" style="user-select:auto;-webkit-user-select:auto;">
+        <button class="btn btn-ghost" style="width:auto;padding:12px 16px;" onclick="joinRoom()">Join</button>
+      </div>
+      <div class="status-msg" id="vs-status"></div>
+    </div>`;
+  document.getElementById('vs-join-inp').addEventListener('input',e=>e.target.value=e.target.value.toUpperCase());
+}
+
+function mkCode(){return Array.from({length:5},()=>'ABCDEFGHJKLMNPQRSTUVWXYZ'[Math.floor(Math.random()*23)]).join('');}
+
+async function createRoom(){
+  const code=mkCode(); G.roomCode=code; G.isHost=true;
+  const room={host:G.name,guest:null,status:'waiting',puzzleIdx:G.themeIdx,diff:G.diff,
+    hostScore:0,guestScore:0,hostFound:[],guestFound:[],ts:Date.now()};
+  await sSet('vs:'+code,room,true);
+  document.getElementById('vs-body').innerHTML=`
+    <div class="room-box"><div class="room-code">${code}</div><div class="room-code-sub">Share with your opponent</div></div>
+    <div class="players-box">
+      <div class="players-box-title">Players</div>
+      <div class="p-row"><div class="p-dot"></div><div class="p-name">${G.name}<span class="p-you">(you)</span></div></div>
+      <div class="p-row"><div class="p-dot wait"></div><div class="p-name" style="color:var(--muted)">Waiting<span class="dots"><span>.</span><span>.</span><span>.</span></span></div></div>
     </div>
-  `).join('');
+    <button class="btn btn-ghost" onclick="cancelRoom('${code}')">Cancel</button>`;
+  clearInterval(G.pollIv);
+  G.pollIv=setInterval(()=>pollForGuest(code),2500);
 }
 
-function initVSLobby() {
-  show('vs');
-  document.getElementById('p1-name').textContent = state.playerName;
-  const room = Math.random().toString(36).substring(2, 6).toUpperCase();
-  vsState.roomCode = room;
-  document.getElementById('vs-code-display').textContent = room;
-
-  vsState.peer = new Peer('ss-room-' + room);
-  vsState.peer.on('open', () => { vsState.isHost = true; });
-  vsState.peer.on('connection', (conn) => {
-    vsState.conn = conn;
-    setupVSConnection();
-  });
+async function cancelRoom(code){
+  clearInterval(G.pollIv);
+  await sDel('vs:'+code,true);
+  renderVSChoose();
 }
 
-function joinVSRoom() {
-  const code = document.getElementById('vs-join-inp').value.trim().toUpperCase();
-  if (!code) return;
-
-  vsState.peer = new Peer();
-  vsState.peer.on('open', () => {
-    vsState.conn = vsState.peer.connect('ss-room-' + code);
-    vsState.isHost = false;
-    setupVSConnection();
-  });
-}
-
-function setupVSConnection() {
-  vsState.conn.on('open', () => {
-    document.getElementById('p2-dot').className = 'p-dot';
-    document.getElementById('vs-start-btn').disabled = false;
-    vsState.conn.send({ type: 'HANDSHAKE', name: state.playerName });
-  });
-
-  vsState.conn.on('data', (data) => {
-    if (data.type === 'HANDSHAKE') {
-      vsState.oppName = data.name;
-      document.getElementById('p2-name').textContent = data.name;
-    } else if (data.type === 'START_GAME') {
-      startVSGameUI(data.levelData);
-    } else if (data.type === 'WORD_FOUND') {
-      vsState.oppScore = data.score;
-      vsState.oppFound = data.foundCount;
-      document.getElementById('vs-opp-score').textContent = vsState.oppScore;
-      document.getElementById('vs-opp-found').textContent = `${vsState.oppFound} words`;
-    }
-  });
-}
-
-function startVSGame() {
-  const levelData = PRESET_LEVELS[0];
-  if (vsState.conn) vsState.conn.send({ type: 'START_GAME', levelData });
-  startVSGameUI(levelData);
-}
-
-function startVSGameUI(levelData) {
-  state.mode = 'vs';
-  state.score = 0;
-  state.foundWords = [];
-  parseAndBuildLevel(levelData);
-  document.getElementById('vs-bar').classList.add('on');
-  document.getElementById('vs-me-name').textContent = state.playerName;
-  document.getElementById('vs-opp-name').textContent = vsState.oppName;
-  show('game');
-}
-
-function initBackgroundCanvas() {
-  const canvas = document.getElementById('bg-cv');
-  const ctx = canvas.getContext('2d');
-  let width = canvas.width = window.innerWidth;
-  let height = canvas.height = window.innerHeight;
-
-  const stars = Array(40).fill(null).map(() => ({
-    x: Math.random() * width,
-    y: Math.random() * height,
-    size: Math.random() * 1.5 + 0.5,
-    alpha: Math.random(),
-    speed: Math.random() * 0.01 + 0.005
-  }));
-
-  function animate() {
-    ctx.clearRect(0, 0, width, height);
-    stars.forEach(s => {
-      s.alpha += s.speed;
-      if (s.alpha > 1 || s.alpha < 0) s.speed = -s.speed;
-      ctx.fillStyle = `rgba(56, 189, 248, ${Math.abs(s.alpha) * 0.4})`;
-      ctx.beginPath();
-      ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
-      ctx.fill();
-    });
-    requestAnimationFrame(animate);
+async function pollForGuest(code){
+  const r=await sGet('vs:'+code,true);
+  if(r&&r.guest){
+    clearInterval(G.pollIv);
+    G.oppName=r.guest;
+    r.status='playing';
+    await sSet('vs:'+code,r,true);
+    startVS(code,r);
   }
-  animate();
 }
+
+async function joinRoom(){
+  const code=(document.getElementById('vs-join-inp').value||'').toUpperCase().trim();
+  const st=document.getElementById('vs-status');
+  if(code.length!==5){st.textContent='Enter a 5-letter code.';return;}
+  st.textContent='Joining…';
+  const r=await sGet('vs:'+code,true);
+  if(!r){st.textContent='Room not found.';return;}
+  if(r.guest){st.textContent='Room is full!';return;}
+  r.guest=G.name;r.status='playing';
+  await sSet('vs:'+code,r,true);
+  G.roomCode=code;G.isHost=false;G.oppName=r.host;
+  startVS(code,r);
+}
+
+function startVS(code,room){
+  G.themeIdx=room.puzzleIdx;G.diff=room.diff;G.score=0;G.oppScore=0;G.oppFound=0;
+  document.getElementById('diff-bar').style.display='none';
+  const vb=document.getElementById('vs-bar');vb.classList.add('on');
+  document.getElementById('vs-my-name').textContent=G.name;
+  document.getElementById('vs-opp-name').textContent=G.oppName;
+  document.getElementById('vs-my-score').textContent='0';
+  document.getElementById('vs-opp-score').textContent='0';
+  show('game');build();
+  clearInterval(G.pollIv);
+  G.pollIv=setInterval(()=>pollOpp(code),2500);
+}
+
+async function pollOpp(code){
+  const r=await sGet('vs:'+code,true);if(!r)return;
+  const oppScore=G.isHost?r.guestScore:r.hostScore;
+  const oppFoundArr=G.isHost?r.guestFound:r.hostFound;
+  G.oppScore=oppScore||0;G.oppFound=(oppFoundArr||[]).length;
+  document.getElementById('vs-opp-score').textContent=G.oppScore;
+  document.getElementById('vs-opp-found').textContent=G.oppFound+' word'+(G.oppFound!==1?'s':'');
+  renderOppLines(oppFoundArr||[]);
+}
+
+async function pushVS(){
+  if(!G.roomCode)return;
+  const r=await sGet('vs:'+G.roomCode,true);if(!r)return;
+  const arr=Array.from(G.found);
+  if(G.isHost){r.hostScore=G.score;r.hostFound=arr;}
+  else{r.guestScore=G.score;r.guestFound=arr;}
+  if(G.found.size===G.words.length)r.status='done';
+  await sSet('vs:'+G.roomCode,r,true);
+}
+
+function renderOppLines(foundArr){
+  document.querySelectorAll('.l-opp').forEach(l=>l.remove());
+  const svg=document.getElementById('svg-layer');
+  foundArr.forEach(word=>{
+    const wo=G.words.find(w=>w.word===word);
+    if(!wo||G.found.has(word))return;
+    const se=document.querySelector(`[data-r="${wo.start[0]}"][data-c="${wo.start[1]}"]`);
+    const ee=document.querySelector(`[data-r="${wo.end[0]}"][data-c="${wo.end[1]}"]`);
+    if(!se||!ee)return;
+    const s=cc(se),e=cc(ee);
+    const l=mkLine('l-opp','#A78BFA',s,e);svg.appendChild(l);
+  });
+}
+
+// ════════════════════════════════
+// CHALLENGE JOIN
+// ════════════════════════════════
+function goJoinChallenge(){
+  requireName(()=>{
+    show('join');
+    document.getElementById('join-inp').value='';
+    document.getElementById('join-status').textContent='';
+  });
+}
+async function joinChallenge(){
+  const code=(document.getElementById('join-inp').value||''
