@@ -1,177 +1,157 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sentence Seekers</title>
-  <link rel="stylesheet" href="style.css">
-  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-</head>
-<body>
+<canvas id="bg-cv"></canvas>
+<canvas id="pcv"></canvas>
+<div class="combo" id="combo"></div>
+<div class="ov hide" id="ov"></div>
 
-  <canvas id="bg-cv"></canvas>
-
-  <div id="s-home" class="screen active">
-    <div class="home-wrap">
-      <div class="home-logo">Sentence Seekers</div>
-      <div class="home-tag">Find missing words in the grid!</div>
-
-      <div class="mode-grid">
-        <div class="mode-card sky" onclick="goSolo()">
-          <span class="mode-icon">🎮</span>
-          <span class="mode-name">Solo Campaign</span>
-          <span class="mode-desc">Play levels & solve word puzzles</span>
-        </div>
-        <div class="mode-card purple" onclick="goVS()">
-          <span class="mode-icon">⚔️</span>
-          <span class="mode-name">VS Mode</span>
-          <span class="mode-desc">Challenge a friend live</span>
-        </div>
-        <div class="mode-card rose" onclick="goCreate()">
-          <span class="mode-icon">🛠️</span>
-          <span class="mode-name">Create Puzzle</span>
-          <span class="mode-desc">Build & share custom levels</span>
-        </div>
-        <div class="mode-card green" onclick="goJoinChallenge()">
-          <span class="mode-icon">🔑</span>
-          <span class="mode-name">Enter Code</span>
-          <span class="mode-desc">Play a shared level</span>
-        </div>
+<!-- ══ HOME ══ -->
+<div class="screen active" id="s-home">
+  <div class="home-wrap">
+    <div class="home-logo">Sentence Seekers</div>
+    <div class="home-tag">Find words · Fill sentences · Challenge friends</div>
+    <div class="mode-grid">
+      <div class="mode-card sky" onclick="goSolo()">
+        <div class="mode-icon">🔤</div>
+        <div class="mode-name" style="color:var(--sky)">Solo Play</div>
+        <div class="mode-desc">Levels, bonus rounds & global leaderboard</div>
       </div>
-
-      <div class="lb-wrap">
-        <div class="lb-head">Leaderboard</div>
-        <div id="lb-list"></div>
+      <div class="mode-card purple" onclick="goVS()">
+        <div class="mode-icon">⚔️</div>
+        <div class="mode-name" style="color:var(--purple)">VS Mode</div>
+        <div class="mode-desc">Race a friend on the same puzzle</div>
+      </div>
+      <div class="mode-card rose" onclick="goJoinChallenge()">
+        <div class="mode-icon">🔗</div>
+        <div class="mode-name" style="color:var(--rose)">Join Challenge</div>
+        <div class="mode-desc">Enter a code to play a friend's puzzle</div>
+      </div>
+      <div class="mode-card green" onclick="goCreate()">
+        <div class="mode-icon">✏️</div>
+        <div class="mode-name" style="color:var(--green)">Create Puzzle</div>
+        <div class="mode-desc">Build your own & share the code</div>
       </div>
     </div>
-  </div>
-
-  <div id="s-name" class="screen">
-    <div class="name-wrap">
-      <div style="font-size:20px; font-weight:700;">Enter Your Name</div>
-      <input type="text" id="name-inp" class="text-input" placeholder="Player Name" maxlength="12">
-      <button id="name-go" class="btn btn-sky">Continue →</button>
+    <div class="lb-wrap">
+      <div class="lb-head">🏆 Global Leaderboard</div>
+      <div id="lb-list"><div class="lb-empty">Loading…</div></div>
     </div>
   </div>
+</div>
 
-  <div id="s-game" class="screen">
+<!-- ══ NAME ══ -->
+<div class="screen" id="s-name">
+  <div class="name-wrap">
+    <div style="font-size:44px">👤</div>
+    <h2>What's your name?</h2>
+    <p>Shows on the leaderboard and in VS mode.</p>
+    <input class="text-input" id="name-inp" placeholder="Enter your name…" maxlength="16" autocomplete="off" spellcheck="false">
+    <button class="btn btn-sky" id="name-go">Continue →</button>
+    <button class="btn btn-ghost" onclick="show('home')">← Back</button>
+  </div>
+</div>
+
+<!-- ══ VS LOBBY ══ -->
+<div class="screen" id="s-vs">
+  <div class="lobby-wrap">
+    <button class="back-btn" onclick="show('home')" style="align-self:flex-start">← Back</button>
+    <h2>⚔️ VS Mode</h2>
+    <div id="vs-body"></div>
+  </div>
+</div>
+
+<!-- ══ JOIN CHALLENGE ══ -->
+<div class="screen" id="s-join">
+  <div class="lobby-wrap">
+    <button class="back-btn" onclick="show('home')" style="align-self:flex-start">← Back</button>
+    <h2>🔗 Join Challenge</h2>
+    <p style="color:var(--muted);font-size:13px;text-align:center">Enter the 5-letter code your friend shared</p>
+    <div class="join-row">
+      <input class="code-input" id="join-inp" placeholder="XXXXX" maxlength="5" autocomplete="off" spellcheck="false">
+      <button class="btn btn-rose" style="width:auto;padding:12px 18px;" onclick="joinChallenge()">Go →</button>
+    </div>
+    <div class="status-msg" id="join-status"></div>
+  </div>
+</div>
+
+<!-- ══ CREATE ══ -->
+<div class="screen" id="s-create">
+  <div class="create-wrap">
+    <button class="back-btn" onclick="show('home')" style="align-self:flex-start">← Back</button>
+    <h2>✏️ Create a Puzzle</h2>
+    <div class="section-lbl">Theme / Title</div>
+    <input class="text-input rose" id="c-theme" placeholder="e.g. Ocean Adventure" maxlength="30" autocomplete="off" spellcheck="false" style="user-select:auto;-webkit-user-select:auto;">
+    <div class="section-lbl">Sentences — use _WORD_ for blanks</div>
+    <textarea class="create-textarea" id="c-s1" placeholder="e.g. The brave _DIVER_ explored the deep _REEF_." rows="2"></textarea>
+    <textarea class="create-textarea" id="c-s2" placeholder="Second sentence (optional)…" rows="2"></textarea>
+    <textarea class="create-textarea" id="c-s3" placeholder="Third sentence (optional)…" rows="2"></textarea>
+    <div class="section-lbl">Extra hidden words (no blank)</div>
+    <div class="extra-row">
+      <input class="extra-input" id="c-extra" placeholder="WORD" maxlength="10" autocomplete="off" spellcheck="false">
+      <button class="btn btn-rose" style="width:auto;padding:10px 14px;font-size:12px;" onclick="addExtra()">+ Add</button>
+    </div>
+    <div class="chips" id="c-chips"></div>
+    <button class="btn btn-green" onclick="publishPuzzle()">🚀 Publish & Get Code</button>
+    <div class="status-msg" id="c-status"></div>
+  </div>
+</div>
+
+<!-- ══ GAME ══ -->
+<div class="screen" id="s-game">
+  <div class="game-wrap">
     <div class="topbar">
       <div class="t-left">
-        <button class="back-btn" onclick="confirmExit()">← Quit</button>
-        <span id="level-tag" style="font-size:12px; font-weight:700; color:var(--muted);">Level 1</span>
+        <button class="back-btn" onclick="leaveGame()">← Menu</button>
+        <div class="game-logo">Sentence Seekers</div>
       </div>
-      <div id="score-disp" class="score-pill">0 PTS</div>
-    </div>
-
-    <div id="vs-bar" class="vs-bar">
-      <div class="vs-card">
-        <div id="vs-me-name" style="font-size:11px; color:var(--sky);">You</div>
-        <div id="vs-me-score" class="vs-pscore">0</div>
-      </div>
-      <div class="vs-card">
-        <div id="vs-opp-name" style="font-size:11px; color:var(--rose);">Opponent</div>
-        <div id="vs-opp-score" class="vs-pscore" style="color:var(--rose);">0</div>
+      <div style="display:flex;align-items:center;gap:7px;">
+        <div class="found-badge" id="found-badge">0/0</div>
+        <button class="hint-btn" id="hint-btn" onclick="useHint()" title="Hint (-100pts)">💡 3</button>
+        <div class="score-pill" id="score-pill">⭐ 0</div>
       </div>
     </div>
 
-    <div id="type-banner" class="type-banner">
-      <div class="type-inner">
-        <div style="flex:1">
-          <div id="type-lbl" style="font-weight:700; font-size:13px;">Bonus Round</div>
-          <div id="type-sub" style="font-size:10px; color:var(--muted);">Time is running out!</div>
-          <div class="type-track"><div id="type-fill" class="type-fill" style="width:100%; background:var(--amber);"></div></div>
+    <div class="type-banner" id="type-banner">
+      <div class="type-inner" id="type-inner">
+        <div class="type-icon" id="type-icon">🔥</div>
+        <div class="type-texts">
+          <div class="type-lbl" id="type-lbl">Bonus Round · 2× Points</div>
+          <div class="type-track"><div class="type-fill" id="type-fill" style="width:100%"></div></div>
         </div>
-        <div id="type-time" class="type-time" style="color:var(--amber);">30</div>
+        <div class="type-time" id="type-time">0:30</div>
       </div>
     </div>
 
+    <div class="vs-bar" id="vs-bar">
+      <div class="vs-card me">
+        <div class="vs-pname" id="vs-my-name">You</div>
+        <div class="vs-pscore" id="vs-my-score">0</div>
+        <div class="vs-pfound" id="vs-my-found">0 words</div>
+      </div>
+      <div class="vs-mid">VS</div>
+      <div class="vs-card opp">
+        <div class="vs-pname" id="vs-opp-name">Opponent</div>
+        <div class="vs-pscore" id="vs-opp-score">0</div>
+        <div class="vs-pfound" id="vs-opp-found">waiting…</div>
+      </div>
+    </div>
+
+    <div class="level-tag" id="level-tag">Level 1</div>
+    <div class="diff-bar" id="diff-bar">
+      <button class="diff-btn on" onclick="setDiff('easy',this)">Easy</button>
+      <button class="diff-btn" onclick="setDiff('medium',this)">Medium</button>
+      <button class="diff-btn" onclick="setDiff('hard',this)">Hard</button>
+      <button class="new-btn" onclick="restartGame()">↻ New</button>
+    </div>
+    <div class="sentences" id="sentences"></div>
     <div class="streak-bar">
-      <span class="streak-lbl">STREAK</span>
-      <span id="streak-mult" class="streak-mult">1x</span>
-      <div class="streak-dots">
-        <div class="sdot"></div><div class="sdot"></div><div class="sdot"></div>
-      </div>
-      <div style="flex:1"></div>
-      <button class="hint-btn" onclick="useHint()">Hint 💡 (<span id="hint-cnt">3</span>)</button>
+      <span class="streak-lbl">Streak</span>
+      <span class="streak-mult" id="smult">×1</span>
+      <div class="streak-dots"><div class="sdot" id="sd0"></div><div class="sdot" id="sd1"></div><div class="sdot" id="sd2"></div></div>
     </div>
-
-    <div class="game-wrap">
-      <div id="sentence-container" class="sentences"></div>
-
-      <div class="grid-wrap">
-        <div id="grid-box" class="grid-box">
-          <svg class="svg-layer">
-            <g id="svg-found-group"></g>
-            <line id="svg-drag" class="l-drag" style="display:none;"></line>
-          </svg>
-          <div id="grid" class="grid"></div>
-        </div>
+    <div class="grid-wrap">
+      <div class="grid-box" id="grid-box">
+        <svg class="svg-layer" id="svg-layer"></svg>
+        <div class="grid" id="grid"></div>
       </div>
     </div>
   </div>
-
-  <div id="s-create" class="screen">
-    <div class="create-wrap">
-      <button class="back-btn" onclick="show('home')" style="align-self:flex-start;">← Back</button>
-      <div style="font-size:18px; font-weight:700;">Create Custom Puzzle</div>
-      <p style="font-size:12px; color:var(--muted);">Use [word] in brackets to mark hidden words.</p>
-      
-      <textarea id="c-text" class="create-textarea" rows="4" placeholder="Example: The quick brown [FOX] jumps over the [DOG]."></textarea>
-      
-      <div style="display:flex; gap:8px;">
-        <input type="text" id="c-extra-inp" class="extra-input" placeholder="Add extra hidden word">
-        <button class="btn btn-ghost" onclick="addExtraWord()" style="width:auto;">Add</button>
-      </div>
-      <div id="c-chips" class="chips"></div>
-
-      <button class="btn btn-rose" onclick="saveCustomPuzzle()">Generate Puzzle Code 🚀</button>
-    </div>
-  </div>
-
-  <div id="s-join" class="screen">
-    <div class="lobby-wrap">
-      <button class="back-btn" onclick="show('home')" style="align-self:flex-start;">← Back</button>
-      <div style="font-size:18px; font-weight:700;">Enter Challenge Code</div>
-      <input type="text" id="custom-code-inp" class="code-input" placeholder="Paste Code Here">
-      <button class="btn btn-sky" onclick="loadCustomChallenge()">Play Level ▶</button>
-      <div id="custom-status" style="font-size:12px; color:var(--red); text-align:center;"></div>
-    </div>
-  </div>
-
-  <div id="s-vs" class="screen">
-    <div class="lobby-wrap">
-      <button class="back-btn" onclick="show('home')" style="align-self:flex-start;">← Back</button>
-      <div style="font-size:18px; font-weight:700;">VS Mode Lobby</div>
-      
-      <div style="text-align:center; padding:16px; background:var(--card); border-radius:12px; border:1px solid var(--border);">
-        <div style="font-size:11px; color:var(--muted);">ROOM CODE</div>
-        <div id="vs-code-display" style="font-family:'Space Mono'; font-size:28px; font-weight:700; color:var(--sky); letter-spacing:4px;">---</div>
-      </div>
-
-      <div style="display:flex; gap:8px;">
-        <input type="text" id="vs-join-inp" class="code-input" placeholder="JOIN CODE">
-        <button class="btn btn-ghost" onclick="joinVSRoom()" style="width:auto;">Join</button>
-      </div>
-
-      <div style="margin-top:10px;">
-        <div style="font-size:12px; color:var(--muted); margin-bottom:8px;">Players in room:</div>
-        <div style="display:flex; justify-content:space-between; font-size:14px; padding:8px 0; border-bottom:1px solid var(--border);">
-          <span id="p1-name">You</span>
-          <span style="color:var(--green);">Ready</span>
-        </div>
-        <div style="display:flex; justify-content:space-between; font-size:14px; padding:8px 0;">
-          <span id="p2-name">Waiting for opponent...</span>
-          <span id="p2-dot" style="color:var(--muted);">•</span>
-        </div>
-      </div>
-
-      <button id="vs-start-btn" class="btn btn-sky" onclick="startVSGame()" disabled>Start Battle ⚔️</button>
-    </div>
-  </div>
-
-  <div id="ov" class="ov hide"></div>
-
-  <script src="script.js"></script>
-</body>
-  </html>
-  
+</div>
